@@ -4,12 +4,15 @@ PROXY_SKIP_VERIFY="${PROXY_SKIP_VERIFY:-false}"
 INSECURE_PROXY=""
 ALLOW_GLOBAL="${ALLOW_GLOBAL:-false}"
 ALLOW_TRANSITIVE="${ALLOW_TRANSITIVE:-false}"
-
+ALLOW_DELETION="${ALLOW_DELETION:-false}"
 
 if echo "$PROXY_SKIP_VERIFY" | egrep -sq "true|TRUE|y|Y|yes|YES|1"; then
     INSECURE_PROXY=insecure_skip_verify
     echo "Unsecure: won't verify proxy certicate chain."
 fi
+
+# fix for certain installations
+cat /caddy/Caddyfile.template > /caddy/Caddyfile
 
 if echo $PROXY | egrep -sq "true|TRUE|y|Y|yes|YES|1" \
         && [[ ! -z "$SCHEMAREGISTRY_URL" ]]; then
@@ -33,6 +36,11 @@ if echo "$ALLOW_GLOBAL" | egrep -sq "true|TRUE|y|Y|yes|YES|1"; then
     echo "Enabling global compatibility level change support."
 fi
 
+if echo "$ALLOW_DELETION" | egrep -sq "true|TRUE|y|Y|yes|YES|1"; then
+    DELETION_SETTING=",allowSchemaDeletion: true"
+    echo "Enabling schema deletion support."
+fi
+
 if [[ -z "$SCHEMAREGISTRY_URL" ]]; then
     echo "Schema Registry URL was not set via SCHEMAREGISTRY_URL environment variable."
 else
@@ -44,6 +52,7 @@ var clusters = [
      SCHEMA_REGISTRY: "$SCHEMAREGISTRY_URL"
      $GLOBAL_SETTING
      $TRANSITIVE_SETTING
+     $DELETION_SETTING
    }
 ]
 EOF

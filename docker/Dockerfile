@@ -14,14 +14,14 @@ RUN wget "https://github.com/mholt/caddy/releases/download/v0.9.5/caddy_linux_am
     && rm -f /caddy.tgz
 
 # Add and Setup Schema-Registry-Ui
-RUN wget "https://github.com/Landoop/schema-registry-ui/releases/download/v.0.9.1/schema-registry-ui-0.9.1.tar.gz" \
+RUN wget "https://github.com/Landoop/schema-registry-ui/releases/download/v.0.9.4/schema-registry-ui-0.9.4.tar.gz" \
          -O /schema-registry-ui.tar.gz \
     && mkdir /schema-registry-ui \
     && tar xzf /schema-registry-ui.tar.gz -C /schema-registry-ui \
     && rm -f /schema-registry-ui.tar.gz
 
 # Add configuration and runtime files
-ADD Caddyfile /caddy/
+ADD Caddyfile /caddy/Caddyfile.template
 ADD run.sh /
 RUN chmod +x /run.sh
 

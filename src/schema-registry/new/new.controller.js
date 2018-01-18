@@ -1,9 +1,12 @@
-angularAPP.controller('NewSubjectCtrl', function ($scope, $route, $rootScope, $http, $log, $q, $location, UtilsFactory, SchemaRegistryFactory, toastFactory, env, $filter) {
+var angular = require('angular');
+var angularAPP = angular.module('angularAPP');
+
+var NewSubjectCtrl = function ($scope, $route, $rootScope, $http, $log, $q, $location, UtilsFactory, SchemaRegistryFactory, toastFactory, env) {
   $log.debug("NewSubjectCtrl - initiating");
 
-  $scope.$on('$routeChangeSuccess', function() {
-       $scope.cluster = env.getSelectedCluster().NAME;//$routeParams.cluster;
-  })
+  $scope.$on('$routeChangeSuccess', function () {
+    $scope.cluster = env.getSelectedCluster().NAME;//$routeParams.cluster;
+  });
 
   $scope.noSubjectName = true;
   $rootScope.listChanges = false;
@@ -23,14 +26,14 @@ angularAPP.controller('NewSubjectCtrl', function ($scope, $route, $rootScope, $h
   $scope.$watch(function () {
     return $scope.text;
   }, function (a) {
-    $scope.allowCreateOrEvolution =false;
+    $scope.allowCreateOrEvolution = false;
     updateCurl();
   }, true);
 
   $scope.$watch(function () {
     return $scope.newAvroString;
   }, function (a) {
-    $scope.allowCreateOrEvolution =false;
+    $scope.allowCreateOrEvolution = false;
     updateCurl();
   }, true);
 
@@ -52,99 +55,124 @@ angularAPP.controller('NewSubjectCtrl', function ($scope, $route, $rootScope, $h
    * 3. new-schema      -> Schema is Json + subject does not exist
    */
   $scope.allowCreateOrEvolution = false;
-  var validTypes = ["null","double","string","record","int","float","long", "array", "boolean", "enum","map","fixed","bytes", "type"]
-  var primitiveTypes = ["null", "boolean", "int", "long", "float", "double", "bytes", "string"]
+  var validTypes = ["null", "double", "string", "record", "int", "float", "long", "array", "boolean", "enum", "map", "fixed", "bytes", "type"];
+  var primitiveTypes = ["null", "boolean", "int", "long", "float", "double", "bytes", "string"];
 
   function testCompatibility(subject, newAvroString) {
-   $scope.notValidType = false;
+    $scope.notValidType = false;
 
-   if(newAvroString === "null") {
-   if (primitiveTypes.indexOf(newAvroString) == -1) {
-    $scope.wrongType = newAvroString;
-    $scope.notValidType = true;
-   }
-   } else {
-       var a;
-       try {
-              a = JSON.parse(newAvroString);
-              console.log("It's probably object, so checking types", a)
-          } catch(e) {
-              if(typeof(newAvroString) == "string") {
-                 if (primitiveTypes.indexOf(newAvroString) == -1) {
-                   $scope.wrongType = newAvroString;
-                   $scope.notValidType = true;
-                 }
-              }
-
+    if (newAvroString === "null") {
+      if (primitiveTypes.indexOf(newAvroString) === -1) {
+        $scope.wrongType = newAvroString;
+        $scope.notValidType = true;
+      }
+    } else {
+      var a;
+      try {
+        a = JSON.parse(newAvroString);
+        console.log("It's probably object, so checking types", a)
+      } catch (e) {
+        if (typeof(newAvroString) === "string") {
+          if (primitiveTypes.indexOf(newAvroString) === -1) {
+            $scope.wrongType = newAvroString;
+            $scope.notValidType = true;
           }
-   }
+        }
 
-   var flattenObject = function(ob) {
-          var toReturn = {};
+      }
+    }
 
-          for (var i in ob) {
-              if (!ob.hasOwnProperty(i)) continue;
+    var flattenObject = function (ob) {
+      var toReturn = {};
 
-              if ((typeof ob[i]) == 'object') {
-                  var flatObject = flattenObject(ob[i]);
-                  for (var x in flatObject) {
-                      if (!flatObject.hasOwnProperty(x)) continue;
-                      toReturn[i + '.' + x] = flatObject[x];
-                  }
+      for (var i in ob) {
+        if (!ob.hasOwnProperty(i)) continue;
 
-              } else {
-                  toReturn[i] = ob[i];
-              }
+        if ((typeof ob[i]) === 'object') {
+          var flatObject = flattenObject(ob[i]);
+          for (var x in flatObject) {
+            if (!flatObject.hasOwnProperty(x)) continue;
+            toReturn[i + '.' + x] = flatObject[x];
           }
-          return toReturn;
-      };
 
-      var obj = flattenObject(newAvroString);
-      for(var key in obj){
-             if(key.indexOf('type') !== -1) {
-                 var primType = getPrimitiveType(key);
-                 if(primType != -1) {
-                     if(validTypes.indexOf(obj[key]) < 0) {
-                       $scope.wrongType = obj[key];
-                       $scope.notValidType = true;
-                     }
-                 }
-             }
+        } else {
+          toReturn[i] = ob[i];
+        }
+      }
+      return toReturn;
+    };
+
+    var obj = flattenObject(newAvroString);
+    var typeKeysToCheck = Object.keys(obj)
+      .reduce(function (typeKeys, key, idx) {
+        // Check that this string has a type substring, if not, we don't have to validate
+        if (key.indexOf('type') !== -1 && isPrimitiveTypeKey(key)) {
+          typeKeys.push(key);
+        } 
+
+        return typeKeys;
+      }, []);
+
+    var typeKeysToCheckLength = typeKeysToCheck.length;
+
+    // Create for loop vars
+    var i;
+    var keyToCheck;
+
+    /* 
+     * By iterating in a for loop, we can break out of an invalid key type found immediately.
+     * That way the UI shows each wrong type one by one(if there are many) instead of just the last
+     * one.
+     */
+    for (i = 0; i < typeKeysToCheckLength; i++) {
+      keyToCheck = typeKeysToCheck[i];
+
+      if (validTypes.indexOf(obj[keyToCheck]) < 0) {
+        $scope.wrongType = obj[keyToCheck];
+        $scope.notValidType = true;
+
+        break;
+      }
+    }
+
+    function isKeyType(key) {
+      return key === 'type';
+    }
+
+    function checkLastTwoKeyParts(lastKeyPart, nextToLastKeyPart) {
+      var isLastKeyPartNotANumber = isNaN(lastKeyPart);
+
+      // If it is not a number, then make sure it's a type key
+      if (isLastKeyPartNotANumber) {
+        return isKeyType(lastKeyPart);
       }
 
-      function getPrimitiveType(key) {
+      // If the last part was a number, is the next to last a type part?
+      return isKeyType(nextToLastKeyPart);
+    };
 
-         var keyToArray = key.split('.');
-         var index;
-         if(keyToArray.length == 1) {
-             index = 0
-         } else {
-             if(isNaN(keyToArray[keyToArray.length - 1])) {
-                 if((keyToArray[keyToArray.length - 1] == 'type')) {
-                     index = keyToArray.length - 1
-                 } else { return -1; }
+    // Check if they key is actually a key that defines the primitive type
+    function isPrimitiveTypeKey(key) {
+      var keyToArray = key.split('.');
+      var keyToArrayLength = keyToArray.length;
+      var lastKeyPart = keyToArray[keyToArrayLength - 1];
+      var nextToLastKeyPart = keyToArray[keyToArrayLength - 2];
 
-             } else {
-                 index = keyToArray.length - 2
-             }
-         }
+      return keyToArrayLength === 1 || checkLastTwoKeyParts(lastKeyPart, nextToLastKeyPart);
+    }
 
-         return keyToArray[index];
-      }
-
-
-    newAvroString = JSON.stringify(newAvroString)
+    newAvroString = JSON.stringify(newAvroString);
 
     var deferred = $q.defer();
 
-    if ((subject == undefined) || subject.length == 0) {
+    if ((subject === undefined) || subject.length === 0) {
       $scope.showSimpleToastToTop("Please fill in the subject name"); // (1.)
       $scope.aceBackgroundColor = "rgba(0, 128, 0, 0.04)";
       deferred.resolve("no-subject-name");
     } else {
       if ($scope.notValidType) {
         $scope.showSimpleToastToTop($scope.wrongType + " is not valid"); // (2.)
-          $scope.aceBackgroundColor = "rgba(255, 255, 0, 0.10)";
+        $scope.aceBackgroundColor = "rgba(255, 255, 0, 0.10)";
         deferred.resolve("not-valid-type")
       } else if (!UtilsFactory.IsJsonString(newAvroString)) {
         $scope.showSimpleToastToTop("This schema is not valid"); // (2.)
@@ -152,23 +180,23 @@ angularAPP.controller('NewSubjectCtrl', function ($scope, $route, $rootScope, $h
         deferred.resolve("not-json")
       } else {
         var latestKnownSubject = SchemaRegistryFactory.getLatestSubjectFromCache(subject);
-        if (latestKnownSubject == undefined) {
+        if (latestKnownSubject === undefined) {
           // (3.)
           $scope.createOrEvolve = "Create new schema";
           $scope.showSimpleToast("This will be a new Subject");
           $scope.allowCreateOrEvolution = true;
           $scope.aceBackgroundColor = "rgba(0, 128, 0, 0.04)";
-          $log.info('Valid schema')
+          $log.info('Valid schema');
           deferred.resolve("new-schema")
         } else {
           SchemaRegistryFactory.testSchemaCompatibility($scope.text, $scope.newAvroString).then(
             function success(data) {
               $log.info("Success in testing schema compatibility " + data);
               // (4.)
-                 $scope.allowCreateOrEvolution = false;
-                 $scope.showSimpleToastToTop("Schema exists, please select a unique subject name");
-                 $scope.aceBackgroundColor = "rgba(255, 255, 0, 0.10)";
-                 deferred.resolve("non-compatible")
+              $scope.allowCreateOrEvolution = false;
+              $scope.showSimpleToastToTop("Schema exists, please select a unique subject name");
+              $scope.aceBackgroundColor = "rgba(255, 255, 0, 0.10)";
+              deferred.resolve("non-compatible")
             },
             function failure(data) {
               $scope.showSimpleToastToTop("Failure with - " + data);
@@ -188,18 +216,19 @@ angularAPP.controller('NewSubjectCtrl', function ($scope, $route, $rootScope, $h
   function updateCurl() {
     //$log.debug("Updating curl commands accordingly");
     var remoteSubject = "FILL_IN_SUBJECT";
-    if (($scope.text != undefined) && $scope.text.length > 0) {
+    if (($scope.text !== undefined) && $scope.text.length > 0) {
       remoteSubject = $scope.text;
     }
-    if (JSON.stringify($scope.newAvroString)){
-    var curlPrefix = 'curl -vs --stderr - -XPOST -i -H "Content-Type: application/vnd.schemaregistry.v1+json" --data ';
-    $scope.curlCommand =
-      "\n" +
-      "// Register new schema\n" + curlPrefix +
-      "'" + '{"schema":"' + JSON.stringify($scope.newAvroString).replace(/\n/g, " ").replace(/\s\s+/g, ' ').replace(/"/g, "\\\"") +
-      '"}' + "' " + env.SCHEMA_REGISTRY() + "/subjects/" + remoteSubject + "/versions";
+    if (JSON.stringify($scope.newAvroString)) {
+      var curlPrefix = 'curl -vs --stderr - -XPOST -i -H "Content-Type: application/vnd.schemaregistry.v1+json" --data ';
+      $scope.curlCommand =
+        "\n" +
+        "// Register new schema\n" + curlPrefix +
+        "'" + '{"schema":"' + JSON.stringify($scope.newAvroString).replace(/\n/g, " ").replace(/\s\s+/g, ' ').replace(/"/g, "\\\"") +
+        '"}' + "' " + env.SCHEMA_REGISTRY() + "/subjects/" + remoteSubject + "/versions";
+    }
   }
-}
+
   /**
    * Private method to register-new-schema
    */
@@ -212,7 +241,7 @@ angularAPP.controller('NewSubjectCtrl', function ($scope, $route, $rootScope, $h
         var schemaId = id;
         $scope.showSimpleToastToTop("Schema ID : " + id);
         $rootScope.listChanges = true; // trigger a cache re-load
-        $location.path('/cluster/'+ $scope.cluster + '/schema/' + newSubject + '/version/latest');
+        $location.path('/cluster/' + $scope.cluster + '/schema/' + newSubject + '/version/latest');
         deferred.resolve(schemaId);
       },
       function error(data, status) {
@@ -253,10 +282,10 @@ angularAPP.controller('NewSubjectCtrl', function ($scope, $route, $rootScope, $h
             break;
           case 'new-schema':
             var schemaString = '';
-            if(typeof $scope.newAvroString != 'string')
-            schemaString = JSON.stringify($scope.newAvroString);
+            if (typeof $scope.newAvroString !== 'string')
+              schemaString = JSON.stringify($scope.newAvroString);
             else
-            schemaString = $scope.newAvroString;
+              schemaString = $scope.newAvroString;
             registerNewSchemaPrivate(subject, schemaString).then(
               function success(newSchemaId) {
                 $log.info("New subject id after posting => " + newSchemaId);
@@ -271,14 +300,14 @@ angularAPP.controller('NewSubjectCtrl', function ($scope, $route, $rootScope, $h
             $log.info("Compatibility [compatible]");
             // TODO
             var latestKnownSubject = SchemaRegistryFactory.getLatestSubjectFromCache(subject);
-            if (latestKnownSubject == undefined) {
+            if (latestKnownSubject === undefined) {
               $log.error("This should never happen.")
             } else {
               $log.info("Existing schema id = " + latestKnownSubject.version);
               registerNewSchemaPrivate(subject, $scope.newAvroString).then(
                 function success(newSchemaId) {
                   $log.info("New subject id after posting => " + newSchemaId);
-                  if (latestKnownSubject.version == newSchemaId) {
+                  if (latestKnownSubject.version === newSchemaId) {
                     toastFactory.showSimpleToastToTop("The schema you posted was same to the existing one")
                   }
                 },
@@ -294,9 +323,9 @@ angularAPP.controller('NewSubjectCtrl', function ($scope, $route, $rootScope, $h
         }
       },
       function failure(data) {
-        if(data.error_code==500){
-            $scope.aceBackgroundColor = "rgba(255, 255, 0, 0.10)";
-            toastFactory.showSimpleToastToTop("Not a valid avro");
+        if (data.error_code === 500) {
+          $scope.aceBackgroundColor = "rgba(255, 255, 0, 0.10)";
+          toastFactory.showSimpleToastToTop("Not a valid avro");
         }
         else {
           $log.error("Could not test compatibilitydasdas", data);
@@ -367,4 +396,9 @@ angularAPP.controller('NewSubjectCtrl', function ($scope, $route, $rootScope, $h
         }]
       }, true);
 
-});
+};
+
+NewSubjectCtrl.$inject = ['$scope', '$route', '$rootScope', '$http', '$log', '$q', '$location', 'UtilsFactory', 'SchemaRegistryFactory', 'toastFactory', 'env']
+
+angularAPP.controller('NewSubjectCtrl', NewSubjectCtrl);
+
